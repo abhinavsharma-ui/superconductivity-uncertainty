@@ -78,7 +78,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from eliashberg import (  # noqa: E402
-    a2f_moments, allen_dynes_tc, eliashberg_tc,
+    a2f_moments, allen_dynes_tc, eliashberg_tc, matsubara_capped,
 )
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -88,8 +88,28 @@ RESULTS = os.path.join(ROOT, "results")
 MU_STAR_AD = 0.10
 MU_STAR_ME = 0.1293
 CUTOFF_FACTOR = 10.0
-SOLVER_FLOOR_K = 0.005
 MAX_MATSUBARA = 250_000
+
+# Two cost bounds, both learned the expensive way.
+#
+# GRID_PAD: the frequency grid must extend past the highest support point, but
+# no further. w_c = CUTOFF_FACTOR * w_max, and n_cut ~ w_c / T, so padding the
+# grid with empty space above the spectrum inflates the Matsubara count for
+# nothing. An earlier version ran the grid to 8*w_2 while the support topped out
+# at 3*w_2, costing a needless ~2.7x in w_c -- and at the lowest-lambda targets
+# that pushed n_cut past MAX_MATSUBARA, so the solves were CAPPED as well as
+# slow. Capped values are biased low and lambda-correlated; see build_physics_
+# dataset.py. Hence the explicit check in scan_target rather than trust.
+#
+# FLOOR_FRAC: t_floor as a fraction of Tc_AD. Every member of a family shares
+# the target's moments, so its Tc sits within a factor of ~1.2 of Tc_AD -- the
+# largest range(ln Tc) measured so far is 0.15. A floor 20x below Tc_AD cannot
+# touch the answer, and since n_cut ~ 1/T it bounds the cost of the bracket
+# descent. Same fix as in moment_matched.py and diagnose_mustar.py: a cost
+# bound on a search, NOT the reporting threshold.
+GRID_PAD = 1.3
+FLOOR_FRAC = 0.05
+SOLVER_FLOOR_K = 0.005
 WIDTH = 0.03           # narrow Gaussian standing in for a delta
 MOMENT_TOL = 2e-3
 
@@ -100,14 +120,65 @@ def _basis(w: np.ndarray, centre: float, width_frac: float = WIDTH) -> np.ndarra
     return g / np.trapezoid(g, w)
 
 
-def build_3support(lam: float, w_log: float, w_2: float, centres, w: np.ndarray):
+def measure_linewidths(max_materials: int = 250, thresh: float = 0.15) -> dict:
+    """
+    Characteristic RELATIVE feature width in real alpha^2 F, MEASURED from
+    BETE-NET rather than chosen.
+
+    WIDTH = 0.03 makes near-delta basis functions. That is the correct choice
+    for the SUPREMUM -- polytope vertices are genuine deltas, and the supremum
+    is a statement about what the moment set permits, not about what nature
+    builds. But it is the wrong choice for the other statistic: what a
+    calibrated model's aleatoric uncertainty converges to is the spread over
+    spectra it could actually MEET, and those have real phonon linewidths.
+    Reporting one as the other is the easiest attack on the result, so the
+    physical width is measured here instead of picked.
+
+    Method: for each material, locate local maxima of a2F above `thresh` of the
+    global max; measure each peak's full width at half maximum by walking out
+    to the half-height crossings; convert to the equivalent Gaussian relative
+    sigma, FWHM / (2.355 * centre). Report the distribution over all peaks in
+    all materials -- the median is what the prior uses.
+    """
+    import json
+    raw = os.path.join(ROOT, "data", "raw", "bete_database.json")
+    with open(raw) as fh:
+        db = json.load(fh)
+    rel = []
+    for k in list(db["a2F"].keys())[:max_materials]:
+        w = np.asarray(db["Freq_meV"][k], float)
+        a = np.asarray(db["a2F"][k], float)
+        if a.size < 5 or not np.any(a > 0):
+            continue
+        cut = thresh * a.max()
+        for i in range(1, a.size - 1):
+            if a[i] <= cut or not (a[i] >= a[i - 1] and a[i] >= a[i + 1]):
+                continue
+            half = 0.5 * a[i]
+            L = i
+            while L > 0 and a[L] > half:
+                L -= 1
+            R = i
+            while R < a.size - 1 and a[R] > half:
+                R += 1
+            fwhm = w[R] - w[L]
+            if w[i] > 1e-9 and fwhm > 0:
+                rel.append(fwhm / (2.355 * w[i]))
+    rel = np.asarray(rel)
+    return {"n_peaks": int(rel.size), "median": float(np.median(rel)),
+            "q25": float(np.percentile(rel, 25)),
+            "q75": float(np.percentile(rel, 75))}
+
+
+def build_3support(lam: float, w_log: float, w_2: float, centres, w: np.ndarray,
+                   width: float = WIDTH):
     """
     a2F = sum_i c_i g_i with all three moments matched exactly (to quadrature).
 
     Returns None if the solution leaves the polytope (any c_i < 0) or if the
     achieved moments miss by more than MOMENT_TOL -- discarded, never fudged.
     """
-    G = [_basis(w, c) for c in centres]
+    G = [_basis(w, c, width) for c in centres]
     A = np.array([
         [2 * np.trapezoid(g / w, w) for g in G],
         [2 * np.trapezoid(g * w, w) for g in G],
@@ -131,23 +202,36 @@ def build_3support(lam: float, w_log: float, w_2: float, centres, w: np.ndarray)
 
 def scan_target(name: str, lam: float, w_log: float, w_2: float,
                 n_grid: int = 16, lo: float = 0.08, hi: float = 3.0,
-                verbose: bool = True) -> dict | None:
+                verbose: bool = True, width: float = WIDTH) -> dict | None:
     """Enumerate 3-support spectra over a log grid of positions, solve each."""
     tc_ad = allen_dynes_tc(lam, w_log, w_2, MU_STAR_AD)
-    w = np.linspace(1e-3, max(8 * w_2, 6 * w_log), 2000)
     grid = np.exp(np.linspace(np.log(lo * w_log), np.log(hi * w_2), n_grid))
+    # grid extent from the actual support, not from a fixed multiple of w_2
+    w = np.linspace(1e-3, GRID_PAD * grid[-1], 2000)
+    t_floor = max(SOLVER_FLOOR_K, FLOOR_FRAC * tc_ad)
 
-    tcs, where = [], []
+    tcs, where, capped = [], [], 0
     for centres in itertools.combinations(grid, 3):
-        a2f = build_3support(lam, w_log, w_2, centres, w)
+        a2f = build_3support(lam, w_log, w_2, centres, w, width)
         if a2f is None:
             continue
         tc = eliashberg_tc(w, a2f, MU_STAR_ME, cutoff_factor=CUTOFF_FACTOR,
-                           t_guess=tc_ad, t_floor=SOLVER_FLOOR_K,
+                           t_guess=tc_ad, t_floor=t_floor,
                            max_matsubara=MAX_MATSUBARA)
-        if np.isfinite(tc) and tc > 0:
-            tcs.append(tc)
-            where.append(centres)
+        if not (np.isfinite(tc) and tc > 0):
+            continue
+        # a capped Tc is biased low and lambda-correlated -- never report it
+        if matsubara_capped(tc, float(w.max()), CUTOFF_FACTOR, MAX_MATSUBARA):
+            capped += 1
+            continue
+        if tc < 2.0 * t_floor:      # floor was supposed to be unreachable
+            print(f"  !! {name}: Tc={tc:.5g} near t_floor={t_floor:.5g}; "
+                  f"FLOOR_FRAC too high", flush=True)
+        tcs.append(tc)
+        where.append(centres)
+    if capped:
+        print(f"  !! {name}: {capped} spectra hit the Matsubara cap, discarded",
+              flush=True)
     if len(tcs) < 3:
         return None
 
@@ -159,6 +243,15 @@ def scan_target(name: str, lam: float, w_log: float, w_2: float,
         "Tc_min": float(tcs.min()), "Tc_max": float(tcs.max()),
         # the supremum statistic: how far apart Tc can be at identical moments
         "range_lnTc": float(np.log(tcs.max() / tcs.min())),
+        # THE OTHER STATISTIC, and it is not interchangeable with the one above.
+        # A range is a supremum over the polytope: no sampling measure, no
+        # comparison to any model's RMSE. This is a SPREAD, which requires a
+        # measure and therefore carries one -- recorded, not implied.
+        "spread_lnTc": float(np.std(np.log(tcs), ddof=1)),
+        "basis_width": width,
+        "measure": "uniform over feasible 3-support triples on the position grid",
+        "n_capped_discarded": capped,
+        "t_floor_used": t_floor,
         "argmin_w": np.round(where[lo_i], 3).tolist(),
         "argmax_w": np.round(where[hi_i], 3).tolist(),
     }

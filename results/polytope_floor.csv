@@ -1,0 +1,2 @@
+target,lambda,w_log,w_2,w_ratio,Tc_AD,n_feasible,Tc_min,Tc_max,range_lnTc,argmin_w,argmax_w,n_real_nearby
+lam1.00_r1.30,1.0,40.0,52.0,1.3,34.60550523469773,112,34.46187887019825,40.392802863059046,0.15879786930854514,"[25.433, 32.956, 92.91]","[3.2, 42.704, 55.335]",25
