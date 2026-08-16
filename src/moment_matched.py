@@ -72,7 +72,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROC = os.path.join(ROOT, "data", "processed")
 RESULTS = os.path.join(ROOT, "results")
 
-MU_STAR = 0.10
+# mu* in the TWO conventions that must not be collapsed into one. The closed
+# form is evaluated in Allen-Dynes's convention; the solver runs at ours
+# (CUTOFF_FACTOR * w_max). Passing 0.10 to BOTH is the same convention collapse
+# that made verify_eliashberg T6 fail by 18%, and it was still live here.
+# See the MU_STAR_* block in build_physics_dataset.py.
+#
+# It is not a wash: it suppresses the floor MOST at low lambda, where
+# |dlnTc/dmu*| is largest, so it does not just shift corr(lambda, floor) -- it
+# mechanically steepens it.
+MU_STAR_AD = 0.10
+MU_STAR_ME = 0.1293
 CUTOFF_FACTOR = 10.0
 N_GRID = 1200
 
@@ -155,12 +165,17 @@ def run_target(name: str, lam: float, w_log: float, w_2: float,
         return None
 
     # Allen-Dynes sees only the three moments -> ONE number for the whole family
-    tc_ad = allen_dynes_tc(lam, w_log, w_2, MU_STAR)
+    tc_ad = allen_dynes_tc(lam, w_log, w_2, MU_STAR_AD)
+
+    # cost bound only: family members sit within ~2x of each other, so a floor
+    # 100x below Tc_AD cannot truncate any of them, and n_cut ~ 1/T
+    t_fl = max(0.005, 0.01 * tc_ad)
 
     tcs = []
     for mem in fam:
-        tc = eliashberg_tc(mem["omega"], mem["a2f"], MU_STAR,
-                           cutoff_factor=CUTOFF_FACTOR, t_guess=tc_ad)
+        tc = eliashberg_tc(mem["omega"], mem["a2f"], MU_STAR_ME,
+                           cutoff_factor=CUTOFF_FACTOR, t_guess=tc_ad,
+                           t_floor=t_fl)
         mem["Tc_ME"] = tc
         if np.isfinite(tc) and tc > 0:
             tcs.append(tc)
@@ -179,8 +194,11 @@ def run_target(name: str, lam: float, w_log: float, w_2: float,
         "n_members": len(tcs), "Tc_AD": tc_ad,
         "Tc_ME_min": tcs.min(), "Tc_ME_max": tcs.max(),
         "Tc_ME_median": float(np.median(tcs)),
-        # the irreducible floor, as a fractional spread in Tc
-        "sigma_log_Tc": float(np.std(np.log(tcs))),
+        # the irreducible floor, as a fractional spread in Tc.
+        # ddof=1: n is 5-6 here, and numpy's default ddof=0 biases the estimate
+        # ~10% LOW at that n -- in the same direction as every other defect in
+        # this file, so the errors compound rather than cancel.
+        "sigma_log_Tc": float(np.std(np.log(tcs), ddof=1)),
         "spread_ratio": float(tcs.max() / tcs.min()),
         "max_moment_err": max_mom_err,
     }
@@ -230,10 +248,30 @@ def main(n_targets: int = 12):
           f"scatter in Tc at fixed Allen-Dynes inputs")
 
     if len(out) > 3:
-        r = np.corrcoef(out["lambda"], out.sigma_log_Tc)[0, 1]
-        print(f"\ncorr(lambda, irreducible floor) = {r:+.3f}")
+        from scipy import stats
+        lam_, sig_ = out["lambda"].to_numpy(), out.sigma_log_Tc.to_numpy()
+        rp = stats.pearsonr(lam_, sig_)
+        rs = stats.spearmanr(lam_, sig_)
+        print(f"\ncorr(lambda, irreducible floor)  n={len(out)}")
+        print(f"  pearson  {rp.statistic:+.3f} (p={rp.pvalue:.2g})"
+              f"   spearman {rs.statistic:+.3f} (p={rs.pvalue:.2g})")
         print("  positive -> the floor itself grows with coupling, which is a")
         print("  DATA-FREE prediction that uncertainty should rise with lambda")
+
+        # Fragility. Pearson over a dozen points with a long right tail in
+        # lambda can be carried by a single high-lambda member, so report how
+        # far it moves when any one target is dropped, and how many points
+        # actually sit above lambda = 1.
+        loo = [stats.pearsonr(np.delete(lam_, i), np.delete(sig_, i)).statistic
+               for i in range(len(lam_))]
+        worst = int(np.argmin(np.abs(loo)))
+        n_hi = int((lam_ > 1.0).sum())
+        print(f"  leave-one-out pearson range [{min(loo):+.3f}, {max(loo):+.3f}]"
+              f"   weakest when dropping '{out.target.iloc[worst]}'"
+              f" (lam={lam_[worst]:.2f})")
+        print(f"  targets above lambda=1: {n_hi}/{len(out)}"
+              + ("   <- the trend rests on very few points; treat as indicative"
+                 if n_hi <= 2 else ""))
 
     print("\nsanity: max moment-matching error across all families = "
           f"{out.max_moment_err.max():.2e} (must be << the spread)")
