@@ -1,4 +1,56 @@
 """
+STATUS: SUPERSEDED AS A FLOOR ESTIMATE. Retained as a sensitivity bound.
+=======================================================================
+This file computes a spread of Tc over the moment-matched set. Convexity gives
+a well-posed SET; it does not give a canonical MEASURE on it, and a spread
+requires one. Measured on the same four cells, three defensible measures span
+an order of magnitude and do not even order consistently:
+
+    target      r    vertex   2-gauss   uniform-on-polytope
+    CrRh3   1.057   0.0042    0.0012      0.0006
+    CoTi    1.161   0.0230    0.0422      0.0028
+    AsZr    1.213   0.0236    0.0565      0.0033
+    Se2V    1.561   0.0906    0.0182      0.0103
+
+vertex beats two-Gaussian at CrRh3 and loses at CoTi/AsZr. Uniform sampling is
+lowest everywhere by ~8x, by concentration of measure: uniform draws on a
+77-dimensional polytope cluster near the centroid and populate every bin
+similarly, so sparse configurations -- which is exactly what the vertex set and
+the two-Gaussian family are built to reach -- carry vanishing weight. Uniform
+is not a neutral default; it is a strong prior asserting that real a2F resemble
+band-limited noise.
+
+So NO number in this file is "the floor", including the ones it prints. The
+RANGE is dropped outright rather than deprioritised: it is a supremum of a
+non-convex function over a set that is unbounded in the support direction, so
+it has no fixed point and is a function of how far the optimiser is allowed to
+roam. Treat range_lnTc as a diagnostic only.
+
+This also retracts HANDOFF section 6's justification for the experiment: the
+floor is NOT "computed with zero reference to the training data". It is defined
+only relative to a distribution over spectra.
+
+What survives, and it is the useful part:
+  - the SET is genuinely convex and interpolable (walking the segment between
+    two extreme vertices holds all three moments to 1e-16 with Tc monotone)
+  - the r-dependence is robust across every measure tried
+  - these constructions are legitimate SENSITIVITY BOUNDS on a floor defined
+    elsewhere, bracketing how far it moves under deliberately extreme priors
+
+The definition now lives in the operational experiment: the residual of a model
+trained on unlimited data from an explicitly stated generative distribution
+over a2F, fitted to BETE-NET rather than invented. That makes the measure a
+declared assumption with a sensitivity analysis instead of an unstated
+consequence of a construction choice.
+
+NOT quantisation, before anyone asks: eliashberg_tc defaults to tol=2e-3, which
+quantises Tc at ~0.2% ~ 0.002 in ln Tc, against CrRh3's spread of 0.0042 -- two
+tolerance units, and the obvious attack on the r -> 1 collapse. Re-run at
+tol=1e-5 every spread moves by <= 0.0001 and CrRh3 is unchanged at 0.0042. The
+low-r floor is real.
+
+---------------------------------------------------------------------------
+
 The moment-matched set is a CONVEX POLYTOPE. Search its extreme points instead
 of sweeping a chosen spectral family.
 
@@ -24,11 +76,16 @@ That is one curve through the polytope, chosen by hand. Its spread is a lower
 bound on the spread across the set, by an unknown factor -- and "is the family
 rich enough?" has no answer, because you can always widen it further.
 
-Parameterising by 3 support points removes the question. Six parameters
-(3 positions, 3 weights) minus 3 constraints leaves 3 free dimensions, which is
-small enough to search directly. Positions are chosen; the weights follow from
-solving the 3x3 linear system; triples whose solution has any negative weight
-lie outside the polytope and are discarded.
+Parameterising by 3 support points was claimed here to REMOVE that question.
+It does not -- it replaces one arbitrary family with a principled one that
+still cannot be completed. Six parameters (3 positions, 3 weights) minus 3
+constraints leaves 3 free dimensions, small enough to search directly;
+positions are chosen, weights follow from the 3x3 solve, and triples with any
+negative weight lie outside the polytope and are discarded. That is a clean
+construction, but it is still a family, and directly tested it is not even the
+widest one: smooth interior spectra matching all three moments to ~1e-9 beat
+every enumerated vertex on both AsZr (Tc 8.196-9.435 vs 8.022-8.775) and CoTi
+(12.810-14.222 vs 12.593-13.660).
 
 TWO LIMITS ON THE RANGE, both measured, both real
 --------------------------------------------------
