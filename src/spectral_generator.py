@@ -156,23 +156,46 @@ def tilt_to(g_donor: np.ndarray, r_target: float):
 
 
 def floor_at(lam: float, w_log: float, w_2: float, shapes: pd.DataFrame,
-             n_donors: int = 40, seed: int = 0, verbose: bool = True):
+             n_donors: int = 40, seed: int = 0, verbose: bool = True,
+             window: float | None = None):
     """
     Spread of ln Tc at fixed (lambda, w_log, w_2) under the EMPIRICAL shape
     distribution: real donor shapes, I-projected onto the target moments.
+
+    `window`: keep only donors with |ln(r_donor / r_target)| < window.
+
+    Why this exists. Exponential tilting is absolutely continuous with respect
+    to the donor -- it REWEIGHTS existing support and cannot create new support.
+    A donor carrying no spectral weight above u ~ 3 therefore cannot be moved to
+    r = 1.56 at any tilt strength. So tilt failures are a REACHABILITY
+    constraint, not a solver problem, and they are not random: they rise from
+    3/30 at r=1.06 to 25/30 at r=1.56, selecting for wide-support donors exactly
+    where the signal is. Left implicit, that compresses shape diversity most at
+    high r and biases the floor DOWN along the axis under study.
+
+    Making the selection explicit converts an uncontrolled bias into a declared
+    parameter that can be swept. window=None reproduces the old behaviour (all
+    donors, selection by failure) and is kept only so the two can be compared.
     """
     rng = np.random.default_rng(seed)
     r_t = w_2 / w_log
-    idx = rng.permutation(len(shapes))[:n_donors]
+    pool = np.arange(len(shapes))
+    if window is not None:
+        keep = np.abs(np.log(shapes["r"].to_numpy() / r_t)) < window
+        pool = pool[keep]
+        if len(pool) < 5:
+            return None
+    idx = rng.permutation(pool)[:n_donors]
     tc_ad = allen_dynes_tc(lam, w_log, w_2, MU_STAR_AD)
     t_floor = max(SOLVER_FLOOR_K, FLOOR_FRAC * tc_ad)
 
-    tcs, mom_err, n_fail = [], [], 0
+    tcs, mom_err, n_fail, r_used = [], [], 0, []
     for i in idx:
         g_new = tilt_to(shapes["g"].iloc[i], r_t)
         if g_new is None:
             n_fail += 1
             continue
+        r_used.append(float(shapes["r"].iloc[i]))
         w = U_GRID * w_log
         a2f = 0.5 * lam * w * (g_new / w_log)
         m = a2f_moments(w, a2f)
@@ -199,12 +222,21 @@ def floor_at(lam: float, w_log: float, w_2: float, shapes: pd.DataFrame,
         "range_lnTc": float(np.log(tcs.max() / tcs.min())),
         "max_moment_err": float(np.max(mom_err)),
         "measure": "empirical BETE-NET shapes, I-projected onto target moments",
+        # diagnostics for the reachability bias: how far the surviving donors
+        # actually sat from the target, and how many were unreachable
+        "donor_window": window if window is not None else np.nan,
+        "fail_frac": n_fail / max(n_fail + len(tcs), 1),
+        "donor_r_median": float(np.median(r_used)),
+        "donor_r_iqr": float(np.percentile(r_used, 75)
+                             - np.percentile(r_used, 25)),
     }
     if verbose:
         print(f"  lam={lam:5.2f} r={r_t:5.3f}  n={len(tcs):3d} "
-              f"(failed {n_fail:2d})  Tc [{tcs.min():8.3f},{tcs.max():8.3f}]  "
-              f"spread={out['spread_lnTc_empirical']:.4f}  "
-              f"(moment err {out['max_moment_err']:.1e})", flush=True)
+              f"(fail {out['fail_frac']:4.0%})  Tc [{tcs.min():8.3f},"
+              f"{tcs.max():8.3f}]  spread={out['spread_lnTc_empirical']:.4f}  "
+              f"donor r={out['donor_r_median']:.3f}"
+              f"+-{out['donor_r_iqr'] / 2:.3f}  "
+              f"(mom {out['max_moment_err']:.1e})", flush=True)
     return out
 
 
