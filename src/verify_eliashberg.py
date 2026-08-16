@@ -142,6 +142,34 @@ def main():
           max(arn_errs) < 1e-8,
           f"max relative eigenvalue error over T=5,12,25 K: {max(arn_errs):.2e}")
 
+    # ---------------- T2d: largest REAL part, not largest magnitude ----
+    # Tc is defined by the largest real part of the gap kernel. Power iteration
+    # converges to the largest MAGNITUDE. mu* enters as a negative rank-1 term
+    # whose magnitude grows with mu*, so above mu* ~ 0.2 a negative eigenvalue
+    # overtakes the positive one and power iteration converges cleanly onto the
+    # wrong answer -- no stall, so the iteration-cap guard never fires.
+    #
+    # The sweep must actually REACH the negative-dominant regime, otherwise it
+    # silently stops testing the thing it exists for; that is asserted too.
+    we2, ae2 = einstein_spectrum(10.0, 0.4)
+    lr_errs, n_neg, first_neg = [], 0, None
+    for T_k in (2.0, 0.5):
+        for mu in (0.10, 0.1293, 0.1840, 0.25, 0.30, 0.32):
+            T, w_n, lam_d, Z = _me_pieces(T_k, we2, ae2, 10.0, 400)
+            ev = np.linalg.eigvals(_me_dense(T, w_n, lam_d, Z, mu)).real
+            rho_lr, rho_lm = float(ev.max()), float(ev[np.argmax(np.abs(ev))])
+            if rho_lm < rho_lr - 1e-12:          # negative eigenvalue dominates
+                n_neg += 1
+                first_neg = first_neg if first_neg is not None else mu
+            got = _me_eigenvalue(T_k, we2, ae2, mu, 10.0, max_matsubara=400)
+            lr_errs.append(abs(got - rho_lr) / max(abs(rho_lr), 1e-12))
+    check("T2d largest real part vs largest magnitude (mu* sweep)",
+          max(lr_errs) < 1e-8 and n_neg > 0,
+          f"max relative error over mu*=0.10..0.32 x T=2,0.5 K: "
+          f"{max(lr_errs):.2e}; negative-dominant in {n_neg}/12 cases"
+          + (f", first at mu*={first_neg}" if first_neg else
+             " -- SWEEP NEVER REACHED THE REGIME IT TESTS"))
+
     # ---------------- T3: cutoff convergence ----------------
     tcs = {cf: eliashberg_tc(w, a, 0.10, cutoff_factor=cf) for cf in (5, 10, 20, 40)}
     spread = (max(tcs.values()) - min(tcs.values())) / np.mean(list(tcs.values()))

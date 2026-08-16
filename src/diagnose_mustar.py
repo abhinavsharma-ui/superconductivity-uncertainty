@@ -63,7 +63,18 @@ def main():
         w, a = einstein_spectrum(W_E, lam)
         m = a2f_moments(w, a)
         tad = allen_dynes_tc(m["lambda_"], m["w_log"], m["w_2"], MU_REF)
-        tme = eliashberg_tc(w, a, MU_REF, cutoff_factor=CUTOFF, t_guess=tad)
+        # t_floor here is a COST BOUND ON A SIGN TEST, not a physical or
+        # reporting threshold -- distinct from SC_THRESHOLD_K, do not unify
+        # them. Removing the max_matsubara=1500 cap removed the only bound on
+        # this script's cost, and it inherits t_floor=0.005 K, where n_cut is
+        # ~43,000 and a single eigenvalue takes ~20 s. What is actually being
+        # asked is f(mu) = Tc_ME(mu) - tad, and tad is ~0.49 K at lambda=0.4,
+        # so the root sits ~100x above the floor: once Tc drops under ~0.05 K
+        # the sign of f is unambiguous and resolving Tc further buys nothing.
+        # n_cut ~ 1/T, so this is ~10x cheaper at no accuracy cost.
+        t_fl = max(0.05, 0.1 * tad)
+        tme = eliashberg_tc(w, a, MU_REF, cutoff_factor=CUTOFF, t_guess=tad,
+                            t_floor=t_fl)
 
         # Upper bound on the mu* search. The hard limit is where the AD
         # denominator vanishes, mu = lambda/(1+0.62 lambda), but Tc -> 0 there
@@ -79,7 +90,7 @@ def main():
 
         def f(mu):
             t = eliashberg_tc(w, a, mu, cutoff_factor=CUTOFF, t_guess=tad,
-                              tol=5e-4)
+                              tol=5e-4, t_floor=t_fl)   # cost bound, see above
             return (t if t > 0 else 0.0) - tad
 
         # The mu_hi guess above is keyed to where Tc_AD falls, but the root is

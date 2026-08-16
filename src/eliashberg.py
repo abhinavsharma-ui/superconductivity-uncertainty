@@ -336,11 +336,28 @@ def _me_eigenvalue(T_kelvin: float, omega: np.ndarray, a2f: np.ndarray,
 
     mv = _me_matvec(T, w_n, lam_d, Z, mu_star)
     rho, iters = _dominant_eigenvalue(mv, w_n.size)
-    if iters >= _POWER_ITERS:
-        # A stalled power iteration returns whatever it had reached, which is
-        # NOT the eigenvalue. Do not let that propagate: fall back to Arnoldi,
-        # which handles a clustered spectrum properly and also needs only
-        # matrix-vector products, so the matrix-free kernel is reused as is.
+    if iters >= _POWER_ITERS or rho <= 0.0:
+        # Two different failures, one fallback.
+        #
+        # STALL: power iteration returns whatever it had reached, which is not
+        # the eigenvalue. Happens at large N where the spectrum clusters.
+        #
+        # WRONG EIGENVALUE: Tc is defined by the largest REAL part, but power
+        # iteration converges to the largest MAGNITUDE. mu* enters the kernel as
+        # -mu* * outer(1/Z_n, 1/|w_m|), a negative rank-1 term whose magnitude
+        # grows with mu*, so above mu* ~ 0.2 it produces a negative eigenvalue
+        # that overtakes the positive one. Power iteration then converges
+        # CLEANLY -- no stall, so the iters guard never fires -- onto a negative
+        # rho, and eliashberg_tc reads rho < 1 and calls a superconducting
+        # material normal.
+        #
+        # rho <= 0 is a sound trigger: a negative value cannot be the largest
+        # real part while any positive eigenvalue exists, and where none exists
+        # Arnoldi (which="LR") returns the correct negative one anyway.
+        #
+        # Production mu* (0.1293, 0.1840) sits below the onset, but
+        # diagnose_mustar.py brackets up to lambda/(1+0.62 lambda) -- 0.32 at
+        # lambda=0.4 -- which is well past it.
         rho = _arnoldi_eigenvalue(mv, w_n.size, T_kelvin, rho)
     return rho
 
