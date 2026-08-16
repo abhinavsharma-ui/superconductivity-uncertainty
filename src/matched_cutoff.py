@@ -16,7 +16,10 @@ import json, os, sys, time, numpy as np, pandas as pd
 from multiprocessing import Pool
 for v in ("OMP_NUM_THREADS","OPENBLAS_NUM_THREADS","MKL_NUM_THREADS"):
     os.environ.setdefault(v, "1")
-sys.path.insert(0,'src')
+# ROOT-relative, so this runs the same from any working directory and writes
+# its output next to the other results rather than wherever it was launched
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, 'src'))
 from eliashberg import eliashberg_tc, rescale_mu_star
 
 MU10 = 0.1293
@@ -24,8 +27,10 @@ MU20 = rescale_mu_star(MU10, 10.0, 20.0)
 MU40 = rescale_mu_star(MU20, 20.0, 40.0)
 KW = dict(t_floor=0.005, max_matsubara=250_000, tol=1e-3)
 
-d = pd.read_csv('data/processed/physics_dataset.csv')
-db = json.load(open('data/raw/bete_database.json'))
+OUT = os.path.join(ROOT, 'results', 'matched_cutoff.csv')
+d = pd.read_csv(os.path.join(ROOT, 'data', 'processed', 'physics_dataset.csv'))
+with open(os.path.join(ROOT, 'data', 'raw', 'bete_database.json')) as fh:
+    db = json.load(fh)
 s = d[(d.Tc_ME > 0.2)].copy()          # keep it affordable; spans lam and r fully
 ql = s['lambda'].quantile([1/3,2/3]).values; qr = s.w_ratio.quantile([1/3,2/3]).values
 s['cell'] = np.digitize(s['lambda'],ql)*3 + np.digitize(s.w_ratio,qr)
@@ -49,7 +54,9 @@ if __name__ == '__main__':
     t0=time.time()
     with Pool(2) as p:
         out=[r for r in p.map(work,[r for _,r in sel.iterrows()]) if r]
-    r=pd.DataFrame(out); r.to_csv('matched_cutoff.csv',index=False)
+    r=pd.DataFrame(out)
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    r.to_csv(OUT, index=False)
     print(f"n={len(r)}  {time.time()-t0:.0f}s\n")
     print(f"d_matched  mean {r.d_matched.mean():+.5f}  median {r.d_matched.median():+.5f}"
           f"  sd {r.d_matched.std():.5f}  range [{r.d_matched.min():+.4f},{r.d_matched.max():+.4f}]")

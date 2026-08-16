@@ -46,6 +46,15 @@ KB_MEV_PER_K = 0.08617333262
 # power-iteration budget; exposed so callers can detect a stall
 _POWER_ITERS = 2000
 
+# Matsubara backstop. 1500 was the DENSE kernel's memory ceiling (N = 2*n_cut+1
+# and it built three N x N arrays); the matrix-free path is O(N) in memory, so
+# that ceiling is obsolete. It stayed as the signature default long enough for
+# three call sites to silently inherit it and run capped -- the failure mode
+# capping causes is a lambda-CORRELATED bias in Tc, not noise, so a stale
+# default here quietly poisons downstream correlations. 250k covers the worst
+# material in the 806 (BeGeSc needs n_cut = 22,380 at cutoff_factor = 10).
+MAX_MATSUBARA = 250_000
+
 _trapz = getattr(np, "trapezoid", None) or np.trapz  # numpy 1.x / 2.x
 
 
@@ -369,7 +378,8 @@ def _arnoldi_eigenvalue(matvec, n: int, T_kelvin: float, fallback: float) -> flo
 def eliashberg_tc(omega: np.ndarray, a2f: np.ndarray, mu_star: float = 0.10,
                   cutoff_factor: float = 10.0, tol: float = 2e-3,
                   t_guess: float | None = None, t_floor: float = 0.005,
-                  max_matsubara: int = 1500, exact: bool = False) -> float:
+                  max_matsubara: int = MAX_MATSUBARA,
+                  exact: bool = False) -> float:
     """
     Tc in kelvin from the linearized isotropic Migdal-Eliashberg equations.
 
@@ -452,7 +462,7 @@ def eliashberg_tc(omega: np.ndarray, a2f: np.ndarray, mu_star: float = 0.10,
 
 
 def matsubara_capped(tc_kelvin: float, w_max: float, cutoff_factor: float = 10.0,
-                     max_matsubara: int = 1500) -> bool:
+                     max_matsubara: int = MAX_MATSUBARA) -> bool:
     """True if `max_matsubara` bound the sum at this Tc, so the effective
     cutoff was lower than `cutoff_factor * w_max` and the value is suspect."""
     if not np.isfinite(tc_kelvin) or tc_kelvin <= 0:

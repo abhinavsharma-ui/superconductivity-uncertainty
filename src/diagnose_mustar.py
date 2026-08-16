@@ -88,8 +88,11 @@ def main():
         # guess can stop short of the root and hand brentq a same-sign bracket,
         # which is exactly how lambda=0.4 and 0.5 were lost at --mu-ref 0.13.
         # Expand outward until Tc_ME actually crosses the target. t_floor inside
-        # eliashberg_tc bounds the cost: once Tc_ME drops under 0.05 K it
-        # returns 0 rather than marching toward T -> 0.
+        # eliashberg_tc bounds the cost: once Tc_ME drops under it the solver
+        # returns 0 rather than marching toward T -> 0. That floor is now
+        # 0.005 K, not the 0.05 K this comment used to claim -- so the bound is
+        # 10x looser than stated, which matters because each extra decade of T
+        # multiplies the Matsubara count.
         n_exp = 0
         while mu_hi < 0.98 * mu_hard and f(mu_hi) > 0 and n_exp < 12:
             mu_hi = min(mu_hi + 0.25 * (mu_hard - mu_hi), 0.98 * mu_hard)

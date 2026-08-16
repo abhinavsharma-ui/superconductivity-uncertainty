@@ -9,14 +9,19 @@ import json, os, sys, time, numpy as np, pandas as pd
 from multiprocessing import Pool
 for v in ("OMP_NUM_THREADS","OPENBLAS_NUM_THREADS","MKL_NUM_THREADS"):
     os.environ.setdefault(v, "1")
-sys.path.insert(0, 'src')
+# ROOT-relative, so this runs the same from any working directory and writes
+# its output next to the other results rather than wherever it was launched
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, 'src'))
 from eliashberg import eliashberg_tc
 
 MU, H = 0.1293, 0.005
 KW = dict(cutoff_factor=10.0, t_floor=0.005, max_matsubara=250_000, tol=1e-3)
 
-d = pd.read_csv('data/processed/physics_dataset.csv')
-db = json.load(open('data/raw/bete_database.json'))
+OUT = os.path.join(ROOT, 'results', 'bias_check.csv')
+d = pd.read_csv(os.path.join(ROOT, 'data', 'processed', 'physics_dataset.csv'))
+with open(os.path.join(ROOT, 'data', 'raw', 'bete_database.json')) as fh:
+    db = json.load(fh)
 s = d[(d.Tc_ME > 0.05) & (d.Tc_ME_mu13 > 0)].copy()
 s = s.sort_values('lambda')
 idx = np.unique(np.linspace(0, len(s)-1, 45).astype(int))
@@ -43,7 +48,8 @@ if __name__ == '__main__':
     den1 = r.lam - MU*(1+0.62*r.lam); den2 = r.lam - 0.1840*(1+0.62*r.lam)
     r['B_AD'] = den1/den2
     r['B_true'] = r.S_secant/r.S_local_true
-    r.to_csv('bias_check.csv', index=False)
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    r.to_csv(OUT, index=False)
     print(f"n={len(r)}  {time.time()-t0:.0f}s\n")
     print(f"{'lam':>7}{'S_secant':>10}{'S_local':>10}{'B_true':>8}{'B_AD':>7}{'B_AD/B_true':>13}")
     for _, x in r.iterrows():
