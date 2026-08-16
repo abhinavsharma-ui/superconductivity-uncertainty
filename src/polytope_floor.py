@@ -41,29 +41,53 @@ bounds: widening the position grid from [0.15 w_log, 2.2 w_2] to
 kept growing the range. Enumeration should eventually be replaced by explicit
 optimisation over the 3 free dimensions.
 
-TWO DIFFERENT QUANTITIES, both needed
--------------------------------------
+THREE QUANTITIES, and they are not interchangeable
+--------------------------------------------------
 sigma(ln Tc) over a family is NOT intrinsic -- it depends on the family and on
-how the family is sampled. The polytope has two well-defined statistics and the
-paper needs to say which it reports:
+how the family is sampled. Name which one is being reported:
 
-  RANGE over the polytope -- a supremum. This is the "no model can do better
-      than this from three moments" claim. Well defined, no sampling measure
-      required, and what this script computes.
+  RANGE over the polytope -- a supremum, max minus min. No sampling measure
+      required. This is the "no model can do better than this from three
+      moments" claim. It is NOT comparable to any model's RMSE.
 
-  SPREAD under a prior over physically realisable spectra -- this is what a
-      calibrated model's aleatoric uncertainty should converge to, because the
-      model sees real materials, not polytope vertices.
+  SPREAD under a MEASURE ON THE POLYTOPE -- what `spread_lnTc` computes:
+      uniform over the enumerated 3-support triples. A dispersion, so it IS
+      comparable to an RMSE, but the measure is an artefact of the enumeration
+      grid, not a statement about nature.
 
-Reporting one and calling it the other is the easiest attack on the result.
+  SPREAD under a LINEWIDTH PRIOR over physically realisable spectra -- what a
+      calibrated model's aleatoric uncertainty should actually converge to,
+      since the model meets real materials rather than polytope vertices. NOT
+      YET IMPLEMENTED. Real a2F cluster away from the vertices, so this should
+      come out SMALLER than the uniform-on-polytope spread.
 
-Physicality caveat
-------------------
-WIDTH = 0.03 makes near-delta spectra, which are not literal phonon spectra.
-The existing width-convergence check (width_frac 0.30 -> 0.04 converging rather
-than diverging) is evidence the limit is well behaved. Report the delta limit
-as the rigorous supremum and a physically smoothed version as the realisable
-value, and bracket the floor between them.
+The second and third are both "spreads" and are easy to conflate in prose; they
+are different numbers. Reporting any of the three as another is the easiest
+attack on the result, which is why basis_width and measure are emitted as CSV
+columns rather than left to a docstring.
+
+Basis width: measured, and it matters only at low r
+---------------------------------------------------
+An earlier version of this text proposed bracketing the floor between a
+"rigorous but unphysical" delta limit and a "physically smoothed" value. That
+framing is wrong and has been removed. measure_linewidths() puts real BETE-NET
+a2F feature widths at median 0.0399, IQR [0.0173, 0.1027] over 2279 peaks --
+only 1.3x the WIDTH = 0.03 basis. There is no meaningful delta-vs-realisable
+gap to bracket; the delta basis is already near-physical. The real bracket is
+RANGE vs SPREAD, which is a statistical distinction, not a physical one.
+
+Width does still matter in one place. Swept across the measured IQR:
+
+    Se2V  r=1.561   range at q75 / at median = 0.973   n_feas 128 -> 128
+    CoTi  r=1.161                              0.937           96 ->  96
+    CrRh3 r=1.057                              0.750           38 ->  26
+
+Flat at high r, but at r -> 1 the w_log and w_2 constraints nearly coincide,
+the polytope is close to degenerate, and a broad basis smears constraint
+satisfaction enough to destroy feasible triples. So the near-Einstein collapse
+value is width-dependent and must be quoted with its width. Note the direction:
+this shrinks low-r cells more than high-r ones, so a physical width STEEPENS
+the r-dependence -- the measured shape effect is conservative under this choice.
 """
 
 from __future__ import annotations
@@ -249,7 +273,10 @@ def scan_target(name: str, lam: float, w_log: float, w_2: float,
         # measure and therefore carries one -- recorded, not implied.
         "spread_lnTc": float(np.std(np.log(tcs), ddof=1)),
         "basis_width": width,
-        "measure": "uniform over feasible 3-support triples on the position grid",
+        # NOT a linewidth prior. This measure is an artefact of the enumeration
+        # grid; a prior weighted by realisable spectra is a different (smaller)
+        # number and is not yet implemented. Do not relabel this as one.
+        "measure": "uniform over enumerated 3-support triples (polytope measure)",
         "n_capped_discarded": capped,
         "t_floor_used": t_floor,
         "argmin_w": np.round(where[lo_i], 3).tolist(),
