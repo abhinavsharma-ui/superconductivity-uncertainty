@@ -1,0 +1,17 @@
+# virtualenv
+.venv/
+
+# python
+__pycache__/
+*.pyc
+
+# raw downloads: 89 MB BETE-NET + 25 MB UCI, re-fetchable via src/fetch_data.py
+data/raw/
+
+# build checkpoints -- an incomplete run, never a deliverable
+*.partial
+
+# smoke-test outputs. These exist so a --limit run cannot masquerade as a full
+# build; committing them would defeat the point.
+data/processed/*.limit*.csv
+data/processed/*.stale.csv
