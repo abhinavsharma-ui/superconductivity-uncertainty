@@ -30,6 +30,33 @@ small enough to search directly. Positions are chosen; the weights follow from
 solving the 3x3 linear system; triples whose solution has any negative weight
 lie outside the polytope and are discarded.
 
+TWO LIMITS ON THE RANGE, both measured, both real
+--------------------------------------------------
+1. VERTICES ARE NOT ENOUGH, because Tc is not convex in a2F. The theorem
+   above is about extreme points OF THE SET. The extremes of a non-convex
+   FUNCTION on that set need not be attained at them, and are not: on AsZr the
+   hand-picked two-Gaussian family reaches range 0.1408 while a 3-support
+   search refined over all 3 free dimensions reaches only 0.1377. A
+   two-Gaussian mixture is an interior point and it beats every vertex found.
+   So 3-support search is a RESTRICTION, not a completeness result. Refinement
+   helps (gains of 1.30-1.45x over enumeration, and it does overtake the
+   two-Gaussian value on CoTi and Se2V) but cannot be claimed to converge.
+
+2. THE FEASIBLE SET IS UNBOUNDED IN SUPPORT POSITION. A vanishing weight at
+   w -> infinity absorbs the w_2 constraint while costing only O(1/w^2) in
+   lambda and in ln w_log, so support can be pushed arbitrarily high at
+   negligible cost to the other two moments. Optimisation exploits this
+   correctly and immediately: the refined Se2V maximum sits at
+   w = [1.07, 15.4, 703] meV, a support point 51x its own w_2. Mathematically
+   valid, physically absurd -- no phonon spectrum has a 703 meV mode.
+
+Consequence: the RANGE is a supremum of a non-convex function over an unbounded
+set. It has no fixed point under better search and is set by physically absurd
+corners. It needs an explicit physicality bound on support before it means
+anything. The SPREAD has neither problem: it is a second moment over a bounded,
+sampled measure, so it converges under refinement rather than growing. Prefer
+the spread; quote the range only with its support bound stated.
+
 MEASURED against the existing two-Gaussian family, same targets, same mu*_ME:
 
     Ge2Mo6  lam=0.447  r=1.065   range(ln Tc)  0.0059 -> 0.0193   3.28x
@@ -76,18 +103,30 @@ only 1.3x the WIDTH = 0.03 basis. There is no meaningful delta-vs-realisable
 gap to bracket; the delta basis is already near-physical. The real bracket is
 RANGE vs SPREAD, which is a statistical distinction, not a physical one.
 
-Width does still matter in one place. Swept across the measured IQR:
+Width does still matter at low r, but HOW MUCH IS UNRESOLVED and the two
+measurements disagree. Both sweep the measured IQR (0.0173 / 0.0399 / 0.1027);
+both agree on the direction and on which cells are affected:
 
-    Se2V  r=1.561   range at q75 / at median = 0.973   n_feas 128 -> 128
-    CoTi  r=1.161                              0.937           96 ->  96
-    CrRh3 r=1.057                              0.750           38 ->  26
+    r ~ 1.06   spread at q75 vs median:   -24% (config A)   -12% (config B)
+    r ~ 1.21                                      --        -6%  (config B)
+    r ~ 1.16                              -5%  (config A)          --
+    r ~ 1.56                              -2%  (config A)   -2%  (config B)
 
-Flat at high r, but at r -> 1 the w_log and w_2 constraints nearly coincide,
-the polytope is close to degenerate, and a broad basis smears constraint
-satisfaction enough to destroy feasible triples. So the near-Einstein collapse
-value is width-dependent and must be quoted with its width. Note the direction:
-this shrinks low-r cells more than high-r ones, so a physical width STEEPENS
-the r-dependence -- the measured shape effect is conservative under this choice.
+Config A: synthetic targets at w_log = 40 meV. Config B: real-material targets
+on the committed grid. The r ~ 1.06 cell is CrRh3 in both, so the factor-of-two
+disagreement is not target choice and is not yet explained. DO NOT cite a
+magnitude until it is; cite only the direction, which both configs agree on.
+
+The mechanism is not in doubt: as r -> 1 the w_log and w_2 constraints nearly
+coincide, the polytope approaches degeneracy, and a broad basis smears
+constraint satisfaction enough to destroy feasible triples (feasible counts
+drop, they do not merely reweight). So the near-Einstein collapse value is
+width-dependent and must always be quoted with its width.
+
+Direction matters for the headline result and is robust: low-r cells shrink
+more than high-r ones under a broader basis, so a physical width STEEPENS the
+r-dependence. The measured shape effect is conservative under this choice
+whichever magnitude turns out to be right.
 """
 
 from __future__ import annotations
@@ -224,9 +263,67 @@ def build_3support(lam: float, w_log: float, w_2: float, centres, w: np.ndarray,
     return a2f
 
 
+def _tc_at(lam, w_log, w_2, centres, width, tc_ad, t_floor):
+    """Tc for one 3-support spectrum, or None if it leaves the polytope."""
+    centres = np.sort(np.asarray(centres, float))
+    if centres[0] <= 0 or not np.all(np.diff(centres) > 1e-9):
+        return None
+    w = np.linspace(1e-3, GRID_PAD * centres[-1], 2000)
+    a2f = build_3support(lam, w_log, w_2, centres, w, width)
+    if a2f is None:
+        return None
+    tc = eliashberg_tc(w, a2f, MU_STAR_ME, cutoff_factor=CUTOFF_FACTOR,
+                       t_guess=tc_ad, t_floor=t_floor,
+                       max_matsubara=MAX_MATSUBARA)
+    if not (np.isfinite(tc) and tc > 0):
+        return None
+    if matsubara_capped(tc, float(w.max()), CUTOFF_FACTOR, MAX_MATSUBARA):
+        return None
+    return float(tc)
+
+
+def refine_extreme(lam, w_log, w_2, seed_centres, maximise: bool,
+                   width: float, tc_ad: float, t_floor: float,
+                   maxiter: int = 120):
+    """
+    Polish one enumeration extremum over the 3 free dimensions.
+
+    Enumeration on a finite position grid can only report positions ON the
+    grid, so its extremes are grid-resolution-limited -- which is why a
+    hand-picked two-Gaussian family could BEAT the polytope search on CoTi and
+    AsZr. That is proof of non-convergence, not a suspicion, and no amount of
+    grid refinement fixes it in principle: the extremes lie wherever they lie.
+
+    Seeded from the enumerated extremum rather than searched cold, because
+    enumeration has already located the basin and each objective evaluation
+    costs a full Eliashberg solve. Nelder-Mead in log-position space, with
+    points outside the polytope returned as a large penalty -- the feasible set
+    is convex in the WEIGHTS but the map from positions to feasibility is not,
+    so the objective is genuinely discontinuous at the boundary and a
+    derivative-free method is the honest choice.
+    """
+    from scipy.optimize import minimize
+    sign = -1.0 if maximise else 1.0
+    best = {"tc": None, "centres": None}
+
+    def obj(p):
+        tc = _tc_at(lam, w_log, w_2, np.exp(p), width, tc_ad, t_floor)
+        if tc is None:
+            return 1e3                      # outside the polytope
+        if best["tc"] is None or (sign * np.log(tc) < sign * np.log(best["tc"])):
+            best["tc"], best["centres"] = tc, np.sort(np.exp(p))
+        return sign * np.log(tc)
+
+    minimize(obj, np.log(np.sort(seed_centres)), method="Nelder-Mead",
+             options=dict(xatol=2e-3, fatol=1e-5, maxiter=maxiter,
+                          maxfev=maxiter))
+    return best["tc"], best["centres"]
+
+
 def scan_target(name: str, lam: float, w_log: float, w_2: float,
                 n_grid: int = 16, lo: float = 0.08, hi: float = 3.0,
-                verbose: bool = True, width: float = WIDTH) -> dict | None:
+                verbose: bool = True, width: float = WIDTH,
+                refine: bool = False) -> dict | None:
     """Enumerate 3-support spectra over a log grid of positions, solve each."""
     tc_ad = allen_dynes_tc(lam, w_log, w_2, MU_STAR_AD)
     grid = np.exp(np.linspace(np.log(lo * w_log), np.log(hi * w_2), n_grid))
@@ -279,13 +376,40 @@ def scan_target(name: str, lam: float, w_log: float, w_2: float,
         "measure": "uniform over enumerated 3-support triples (polytope measure)",
         "n_capped_discarded": capped,
         "t_floor_used": t_floor,
+        "refined": False,
         "argmin_w": np.round(where[lo_i], 3).tolist(),
         "argmax_w": np.round(where[hi_i], 3).tolist(),
     }
+    if refine:
+        # the range is a MAXIMUM: it only ever grows with better sampling, and
+        # has no fixed point under refinement. The spread is a second moment
+        # over the feasible set and does converge -- so refinement is reported
+        # for the range, and the spread is left on the enumerated measure,
+        # which is the one it is defined against.
+        tc_hi, c_hi = refine_extreme(lam, w_log, w_2, where[hi_i], True,
+                                     width, tc_ad, t_floor)
+        tc_lo, c_lo = refine_extreme(lam, w_log, w_2, where[lo_i], False,
+                                     width, tc_ad, t_floor)
+        tc_hi = max(tc_hi or tcs.max(), tcs.max())
+        tc_lo = min(tc_lo or tcs.min(), tcs.min())
+        res["range_lnTc_enumerated"] = res["range_lnTc"]
+        res["range_lnTc"] = float(np.log(tc_hi / tc_lo))
+        res["Tc_min"], res["Tc_max"] = tc_lo, tc_hi
+        res["refined"] = True
+        res["refine_gain"] = (res["range_lnTc"]
+                              / max(res["range_lnTc_enumerated"], 1e-12))
+        if c_lo is not None:
+            res["argmin_w"] = np.round(c_lo, 3).tolist()
+        if c_hi is not None:
+            res["argmax_w"] = np.round(c_hi, 3).tolist()
+
     if verbose:
         print(f"  {name:12s} lam={lam:5.2f} r={res['w_ratio']:5.3f}  "
-              f"n_feas={len(tcs):4d}  Tc [{tcs.min():8.4f},{tcs.max():8.4f}]  "
-              f"range(lnTc)={res['range_lnTc']:.4f}", flush=True)
+              f"n_feas={len(tcs):4d}  Tc [{res['Tc_min']:8.4f},"
+              f"{res['Tc_max']:8.4f}]  range(lnTc)={res['range_lnTc']:.4f}"
+              + (f"  ({res['refine_gain']:.2f}x vs enumerated "
+                 f"{res['range_lnTc_enumerated']:.4f})" if refine else ""),
+              flush=True)
         print(f"    min at w={res['argmin_w']}   max at w={res['argmax_w']}",
               flush=True)
     return res
