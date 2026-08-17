@@ -170,14 +170,58 @@ def main():
           + (f", first at mu*={first_neg}" if first_neg else
              " -- SWEEP NEVER REACHED THE REGIME IT TESTS"))
 
-    # ---------------- T3: cutoff convergence ----------------
-    tcs = {cf: eliashberg_tc(w, a, 0.10, cutoff_factor=cf) for cf in (5, 10, 20, 40)}
-    spread = (max(tcs.values()) - min(tcs.values())) / np.mean(list(tcs.values()))
-    tail = abs(tcs[40] - tcs[20]) / tcs[20]
-    check("T3 Matsubara cutoff convergence", tail < 0.02,
-          "Nb Tc vs cutoff_factor: " +
-          ", ".join(f"{k}x->{v:.3f}K" for k, v in tcs.items()) +
-          f"  | 20->40 change {tail:.3%}, full spread {spread:.1%}")
+    # ---------------- T3: Matsubara cutoff, MATCHED PAIRS ----------------
+    # The previous T3 asserted that Tc converges with cutoff at FIXED mu*. That
+    # quantity CANNOT converge: the Coulomb kernel is constant in (n,m), so its
+    # Matsubara sum grows like ln(w_c/T) while the phonon kernel's converges.
+    # The old test passed only on where a 2% threshold happened to sit relative
+    # to a constant ~1.4%-per-doubling drift -- it could not fail for the right
+    # reason. `check_cutoff_convergence.py` was deleted for exactly this error
+    # while the same error sat here in the verification suite.
+    #
+    # Only the PAIR (w_c, mu*(w_c)) is physical. Rescaling mu* by Morel-Anderson
+    # between cutoffs, the matched sequence must converge. Both legs are
+    # asserted so the test can fail in either direction:
+    #
+    #   matched   -- increment 20->40 below 0.2%  (it converges)
+    #   fixed mu* -- increments constant per doubling to within 15% (it does
+    #                NOT converge, and it diverges in the specific logarithmic
+    #                way the mechanism predicts)
+    #
+    # Al is included because low lambda amplifies mu*: its fixed-mu* drift is
+    # ~4x Nb's, which is what makes the failure mode visible rather than
+    # marginal. cf=5 is excluded -- there the phonon kernel itself is not
+    # converged and the matched pair breaks too (Nb +1.9%).
+    _inv = {str(v): k for k, v in db["comp"].items()}
+    t3_detail, t3_pass = [], True
+    for _nm in ("Nb", "Al"):
+        _k = _inv.get(_nm)
+        if _k is None:
+            continue
+        wm = np.asarray(db["Freq_meV"][_k], float)
+        am = np.asarray(db["a2F"][_k], float)
+        w_max_m = float(wm.max())
+        matched, fixed = {}, {}
+        for cf in (10.0, 20.0, 40.0):
+            mu_cf = rescale_mu_star(MU_STAR_ME, 10.0 * w_max_m, cf * w_max_m)
+            matched[cf] = eliashberg_tc(wm, am, mu_cf, cutoff_factor=cf,
+                                        tol=5e-4)
+            fixed[cf] = eliashberg_tc(wm, am, MU_STAR_ME, cutoff_factor=cf,
+                                      tol=5e-4)
+        dm = {cf: 100.0 * (matched[cf] / matched[10.0] - 1.0) for cf in matched}
+        df_ = {cf: 100.0 * (fixed[cf] / fixed[10.0] - 1.0) for cf in fixed}
+        step_matched = abs(dm[40.0] - dm[20.0])          # must be small
+        inc1, inc2 = df_[20.0], df_[40.0] - df_[20.0]    # must be ~equal
+        const_dev = abs(inc2 / inc1 - 1.0) if abs(inc1) > 1e-9 else np.inf
+        ok = (step_matched < 0.2) and (const_dev < 0.15)
+        t3_pass &= ok
+        t3_detail.append(
+            f"{_nm}: matched {dm[20.0]:+.2f}%/{dm[40.0]:+.2f}% "
+            f"(step {step_matched:.3f}%) | fixed {df_[20.0]:+.2f}%/"
+            f"{df_[40.0]:+.2f}% (increments {inc1:+.2f}/{inc2:+.2f}, "
+            f"const to {const_dev:.1%})")
+    check("T3 Matsubara cutoff, matched pairs vs fixed mu*", t3_pass,
+          "   ".join(t3_detail))
 
     # ---------------- T4: Allen-Dynes asymptotic limit ----------------
     # k_B Tc -> 0.1827 sqrt(lambda <w^2>) as lambda -> infinity, at mu* = 0.
