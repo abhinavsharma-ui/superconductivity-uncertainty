@@ -189,11 +189,23 @@ def floor_at(lam: float, w_log: float, w_2: float, shapes: pd.DataFrame,
     tc_ad = allen_dynes_tc(lam, w_log, w_2, MU_STAR_AD)
     t_floor = max(SOLVER_FLOOR_K, FLOOR_FRAC * tc_ad)
 
+    # Per-donor records. Without these the aggregate spread is undiagnosable:
+    # you cannot tell one outlier donor from a genuine distribution shift, and
+    # you cannot check whether two windows drew overlapping ensembles. The
+    # sweep draws a FRESH rng.permutation(pool)[:n_donors] per window, so
+    # windows are NOT nested -- window effect, resampling variance and
+    # tilt-selection are confounded in the aggregate. Post-hoc nesting analysis
+    # needs the donor identities, so they are always returned.
+    donors = []
     tcs, mom_err, n_fail, r_used = [], [], 0, []
     for i in idx:
         g_new = tilt_to(shapes["g"].iloc[i], r_t)
         if g_new is None:
             n_fail += 1
+            donors.append({"key": shapes["key"].iloc[i],
+                           "donor_r": float(shapes["r"].iloc[i]),
+                           "status": "tilt_failed", "Tc": np.nan,
+                           "moment_err": np.nan})
             continue
         r_used.append(float(shapes["r"].iloc[i]))
         w = U_GRID * w_log
@@ -203,10 +215,20 @@ def floor_at(lam: float, w_log: float, w_2: float, shapes: pd.DataFrame,
                   abs(m["w_2"] / w_2 - 1))
         if err > 5e-3:
             n_fail += 1
+            donors.append({"key": shapes["key"].iloc[i],
+                           "donor_r": float(shapes["r"].iloc[i]),
+                           "status": "moment_err", "Tc": np.nan,
+                           "moment_err": float(err)})
             continue
         tc = eliashberg_tc(w, a2f, MU_STAR_ME, cutoff_factor=CUTOFF_FACTOR,
                            t_guess=tc_ad, t_floor=t_floor,
                            max_matsubara=MAX_MATSUBARA, tol=1e-4)
+        donors.append({"key": shapes["key"].iloc[i],
+                       "donor_r": float(shapes["r"].iloc[i]),
+                       "status": "ok" if (np.isfinite(tc) and tc > 0)
+                       else "solver_fail",
+                       "Tc": float(tc) if np.isfinite(tc) else np.nan,
+                       "moment_err": float(err)})
         if np.isfinite(tc) and tc > 0:
             tcs.append(tc)
             mom_err.append(err)
@@ -229,6 +251,7 @@ def floor_at(lam: float, w_log: float, w_2: float, shapes: pd.DataFrame,
         "donor_r_median": float(np.median(r_used)),
         "donor_r_iqr": float(np.percentile(r_used, 75)
                              - np.percentile(r_used, 25)),
+        "donors": donors,          # per-donor records; see the comment above
     }
     if verbose:
         print(f"  lam={lam:5.2f} r={r_t:5.3f}  n={len(tcs):3d} "
