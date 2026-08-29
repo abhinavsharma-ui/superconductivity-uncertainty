@@ -1,6 +1,12 @@
 import numpy as np, pandas as pd
 base = pd.read_csv('data/processed/physics_dataset.csv')
-K = 2*0.6745/np.sqrt(np.pi)          # median|X1-X2| = K*sd for gaussian
+# WRONG CONSTANT, kept only so the superseded numbers are reproducible:
+# this mixes the mean-absolute-difference coefficient 2/sqrt(pi) with the
+# single-variable median coefficient 0.6745. Neither belongs with the other.
+# Correct median divisor is 0.6745*sqrt(2); and see src/pair_slope.py, which
+# uses sd/sqrt(2) because the floor it brackets is quoted as a standard
+# deviation -- matching the functional is the point, not the estimator.
+K = 2*0.6745/np.sqrt(np.pi)
 def run(d, label):
     d = d[np.isfinite(d.ad_error)].copy()
     M = d[['lambda','w_log','w_2']].to_numpy(float)
