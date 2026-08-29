@@ -1,32 +1,92 @@
-# Does Model Uncertainty Track McMillan-Allen-Dynes Breakdown?
+# Decomposing Allen–Dynes error into learnable and irreducible components
 
-Evidence from conventional superconductors.
+Evidence from 806 DFT electron–phonon calculations on conventional
+superconductors.
 
-**Status:** steps 1–3 built and verified. Steps 4–6 (calibrated uncertainty,
-density control, hypothesis test) not yet written.
+The Allen–Dynes formula predicts a superconductor's critical temperature from
+three numbers summarising its Eliashberg spectral function α²F(ω): the coupling
+λ, the log-average phonon frequency ω_log, and the second moment ω₂. Where it
+goes wrong, the error splits in two:
 
-Start with **`docs/theory_notes.md`** — it explains what every object in this
+- **learnable** — error a better function of those same three numbers could
+  absorb, i.e. the formula mishandling information it already has;
+- **irreducible** — the spread of Tc among *different* spectra sharing all three
+  moments, which is information destroyed at the moment of compression and
+  which no function of those three numbers can recover.
+
+This repository measures both. The irreducible component is the harder one and
+is what most of the code is for: it requires constructing spectral functions
+with identical moments and solving Eliashberg theory on each.
+
+**Read `docs/theory_notes.md` first.** It explains what every object in this
 codebase is and why. The code will not make sense without it.
+
+---
+
+## Status
+
+| | |
+|---|---|
+| Eliashberg solver | verified, 10/10 checks (`src/verify_eliashberg.py`) |
+| Physics dataset | built, 806 materials |
+| Irreducible floor | measured on a 3×3 grid in (λ, r), nine cells, all exhaustive over the donor pool |
+| Learnable component | measured, n = 510 |
+| λ dependence of the floor | **unresolved** — see below |
+| Paper | in draft, not submitted |
+
+### What is established
+
+The floor **rises with the spectral shape parameter** r = ω₂/ω_log:
+ρ = +0.917 with each target evaluated over its own reachable donor set, +0.883
+under a fixed common donor set. It survives leave-one-out (+0.901 to +0.952,
+p ≤ 0.0056), equalising sample size, fixing donor composition, a change of
+functional form, and four matching tolerances. It also reproduces on real
+materials with no construction involved at all.
+
+It has a boundary condition rather than only a fitted trend: for any positive
+measure ω₂ ≥ ω_log with equality iff all spectral weight sits at one frequency,
+so at r = 1 the moment-matched set is a single point and the floor is exactly
+zero. The observed trend is the interior of a curve whose endpoint is fixed by
+an inequality.
+
+### What is not
+
+**The λ dependence is not resolved.** λ and r are collinear in any grid drawn
+from real materials, and the partial correlation fails leave-one-out on a single
+cell. A dedicated ladder of seven targets at matched r ≈ 1.19 spanning λ = 0.48
+to 2.12 (`src/run_ladder.py`) is the instrument for it.
+
+**No headroom ratio is quoted anywhere**, in this repository or the draft.
+Three preconditions are unmet, and each moves such a ratio by more than the
+physics does: the floor and the baseline are not computed with a matched
+functional (2.80× between median and RMS on the identical sample); the floor
+cells are drawn from a population cut at Tc_AD > 1 K, which is a cost bound
+rather than a physical criterion and is not the baseline's population (1.73×);
+and the μ\* convention offset has not been stripped from both sides on the same
+footing (1.59–3.26×, and it flips the sign of the mean error).
+
+**Every floor number is conditional on a choice of ensemble.** The
+moment-matched set is a convex polytope; a *measure* on that polytope is a
+declaration, not a fact. The cross-cell dynamic range is 23.1× under each
+target's own donor set and 14.1× under a fixed common set. That gap is a
+finding, not a defect awaiting a fix — see `src/common_matched.py`.
 
 ---
 
 ## The one thing that changed from the original plan
 
-The handoff proposed training on JARVIS-DFT `supercon_3d` (1,058 materials with
-λ, ω_log, μ*, Tc). **That dataset's Tc column is computed from λ and ω_log by
-the Allen-Dynes formula itself.** Training a model on it to study Allen-Dynes
-breakdown is circular — the labels *are* the formula, so there is nothing for
-the formula to be wrong about.
+The original design proposed training on JARVIS-DFT `supercon_3d` (1,058
+materials with λ, ω_log, μ\*, Tc). **That dataset's Tc column is computed from λ
+and ω_log by the Allen–Dynes formula itself.** Training a model on it to study
+Allen–Dynes breakdown is circular — the labels *are* the formula, so there is
+nothing for the formula to be wrong about.
 
-This project instead uses the **BETE-NET** dataset: 806 DFT electron-phonon
-calculations that include the full Eliashberg spectral function α²F(ω). Having
-α²F means the true Tc can be computed by numerically solving the Eliashberg
-equations, which gives a genuine reference that Allen-Dynes can be wrong
-*relative to*. Breakdown becomes a directly measured per-material quantity,
+This project instead uses **BETE-NET**: 806 DFT electron–phonon calculations
+that include the full α²F(ω). Having α²F means Tc can be obtained by numerically
+solving the Eliashberg equations, which gives a reference that Allen–Dynes can
+be wrong *relative to*:
 
     ad_error = log(Tc_Eliashberg / Tc_AllenDynes)
-
-rather than a proxy for λ.
 
 **Known limitation, stated up front:** only 10 of 806 materials have λ ≥ 1.5.
 Any threshold test at λ ≈ 1.5 is a test on ten points. The continuous
@@ -46,18 +106,22 @@ python src/fetch_data.py           # ~110 MB into data/raw/
 ## Run
 
 ```bash
-# verify the Eliashberg solver before trusting anything it produces (~2 min)
+# verify the solver before trusting anything it produces
 python src/verify_eliashberg.py
 
-# build the physics dataset  (~2 min single core, faster with --workers)
-python src/build_physics_dataset.py --workers 8
+# build the physics dataset (~30 min single core; use --workers)
+python src/build_physics_dataset.py --workers 4
 
-# the mu* convention diagnostic
-python src/diagnose_mustar.py
+# the irreducible floor: reachability map first (no solves, ~60 s), then the grid
+python src/reach_map.py
+python src/run_floor.py
 
-# step 2, the composition-only sanity baseline (~3 min)
-python src/baseline_uci.py
+# the lambda ladder: seven targets at matched r, lambda spanning 4.4x
+python src/run_ladder.py --workers 4
 ```
+
+Long runs are checkpointed and resumable, and drop to below-normal process
+priority so the machine stays usable.
 
 ---
 
@@ -66,57 +130,90 @@ python src/baseline_uci.py
 | file | what it does |
 |---|---|
 | `docs/theory_notes.md` | **read first** — the physics, and how it maps to the code |
-| `src/eliashberg.py` | α²F moments, Allen-Dynes, McMillan, and the numerical linearized Migdal-Eliashberg Tc solver |
-| `src/verify_eliashberg.py` | 7 correctness checks on the solver, incl. the analytic strong-coupling limit |
-| `src/diagnose_mustar.py` | is the ME-vs-AD gap a μ* convention mismatch or real formula error? |
-| `src/build_physics_dataset.py` | step 3 — builds `data/processed/physics_dataset.csv` |
-| `src/baseline_uci.py` | step 2 — composition→Tc baseline, with the leakage check |
+| **solver** | |
+| `src/eliashberg.py` | α²F moments, Allen–Dynes, McMillan, and the matrix-free linearised Migdal–Eliashberg Tc solver |
+| `src/verify_eliashberg.py` | 10 correctness checks, each against a source of truth independent of this code |
+| `src/diagnose_mustar.py` | is the ME-vs-AD gap a μ\* convention mismatch or real formula error? |
+| **dataset** | |
 | `src/fetch_data.py` | downloads BETE-NET + UCI |
-
-### Not yet written
-
-- `src/uncertainty_model.py` — step 4, quantile regression forest / GP with
-  calibration curves. **Not plain RF ensemble variance.**
-- `src/density.py` — step 5, k-NN density in feature space
-- `src/hypothesis_test.py` — step 6, uncertainty vs λ controlling for density
+| `src/build_physics_dataset.py` | builds `data/processed/physics_dataset.csv` |
+| `src/baseline_uci.py` | composition→Tc baseline, with the leakage check |
+| `src/analyze_ad_error.py` | shape-confound and premise tests, partial correlations, stratified tables |
+| **the irreducible floor** | |
+| `src/spectral_generator.py` | the empirical ensemble: real donor shapes I-projected onto target moments |
+| `src/polytope_floor.py` | the moment-matched set as a convex polytope; superseded as a floor estimate, kept for the geometry |
+| `src/moment_matched.py` | the two-Gaussian parametric family |
+| `src/reach_map.py` | exact reachable-n for every cell with no solves — reachability is a one-dimensional threshold on donor r |
+| `src/run_floor.py` | the 3×3 (λ, r) grid |
+| `src/run_ladder.py` | seven targets at matched r, λ spanning 4.4× |
+| `src/window_sweep.py` | donor-window sweep (its docstring documents its own design flaw) |
+| **controls** | |
+| `src/common_donors.py` | the donor set reachable at every cell |
+| `src/common_matched.py` | the composition-matched comparison |
+| `src/mixture_test.py` | refutes the pool-heterogeneity account of the kurtosis gradient |
+| `src/neighbour_floor.py` | an independent floor estimate from real near-moment-matched materials |
+| `src/neighbour_lambda.py`, `src/pair_slope.py`, `src/pair_unbinned.py` | the pair-based λ and r estimates, binned and unbinned |
+| `src/resolution_check.py` | finds the solver-tolerance quantisation in `ad_error` |
+| `src/precondition_levers.py` | measures the three preconditions above |
 
 ---
 
 ## Verification
 
-`verify_eliashberg.py` is not a "does it run" test suite. Each check has a
-source of truth independent of this code:
+`verify_eliashberg.py` is not a "does it run" suite. Each check has a source of
+truth independent of this code.
 
 | check | what it establishes |
 |---|---|
-| T1 | α²F integration reproduces the database's stored λ, ω_log, ω₂ (max rel. dev. 1.6e-3 over 200 materials) |
-| T2 | power iteration matches exact eigendecomposition (1.5e-11) |
-| T3 | Tc converged w.r.t. Matsubara cutoff (1.5% from 20×→40×) |
-| **T4** | **reproduces the analytic λ→∞ limit k_BTc → 0.1827√(λ⟨ω²⟩) to 0.2% at λ=100** |
+| T1 | α²F integration reproduces the database's stored λ, ω_log, ω₂ |
+| T2 | power iteration matches exact eigendecomposition |
+| T2b | the matrix-free matvec matches the dense kernel on random vectors |
+| T2c | Arnoldi fallback matches exact eigenvalues |
+| T2d | a μ\* sweep reaches the regime where the dominant eigenvalue goes negative |
+| T3 | Matsubara cutoff, **matched (ω_c, μ\*) pairs vs fixed μ\***: matched drifts −0.5% over 10→40×ω_max where fixed drifts +2 to +19% |
+| **T4** | **reproduces the analytic λ→∞ limit k_BTc → 0.1827√(λ⟨ω²⟩) to 0.2% at λ = 100** |
 | T5 | ρ(T) monotone, so the bisection is well posed |
-| T6 | agreement with Allen-Dynes at weak coupling — see μ* note below |
-| T7 | Tc stable under μ* cutoff rescaling (0.59%) |
+| T6 | agreement with Allen–Dynes at weak coupling under the calibrated μ\* pair |
+| T7 | Tc stable under μ\* cutoff rescaling |
 
-**T4 is the one that matters.** It's derived independently of any fitted
-formula and contains no free parameters. Passing it to 0.2% is the reason to
-trust the solver.
+**T4 is the one that matters.** It is derived independently of any fitted
+formula and contains no free parameters.
 
-**T6 currently fails** at 18%, and that is expected until the μ* convention is
-pinned down — see `diagnose_mustar.py` and §4 of the theory notes. At μ* = 0 the
-solver agrees with Allen-Dynes to 2–6%; the disagreement appears only when μ*
-is turned on, and is worst at low λ. That is the signature of a cutoff
-convention mismatch, not a solver bug.
+**T3 is the one that took longest to state correctly.** Tc is *not* convergent
+in the Matsubara cutoff at fixed μ\*, and should not be — μ\* has no meaning
+without the energy scale at which it is defined. Only the pair (ω_c, μ\*(ω_c))
+is physical. Testing convergence at fixed μ\* measures the convention, not the
+solver.
+
+---
+
+## Conventions
+
+- Energies in **meV**, temperatures in **kelvin**
+- **Two μ\* constants, not one.** `MU_STAR_AD = 0.10` is Allen–Dynes's own
+  convention; `MU_STAR_ME = 0.1293` is the equivalent repulsion at this
+  solver's cutoff, read from the low-λ plateau. Sensitivity pair: 0.13 / 0.1840.
+  Comparing the two theories at the same numerical μ\* compares conventions,
+  not physics.
+- **Two Tc floors, not one.** `SOLVER_FLOOR_K = 0.005` is numerical — where the
+  bisection stops descending. `SC_THRESHOLD_K = 0.05` is a reporting choice —
+  what counts as superconducting. It is applied downstream and swept, because
+  thresholding Tc is λ-correlated selection.
+- `SOLVER_TOL = 1e-4`, passed explicitly. See `data/processed/PROVENANCE.md`:
+  the committed CSV predates this and carries the old signature default of
+  2e-3, which quantised `ad_error`.
+- Eliashberg cutoff at 10 × ω_max, `MAX_MATSUBARA = 250_000`
 
 ---
 
 ## Data
 
-**BETE-NET** (806 materials, 85 MB) — DFT electron-phonon calculations with full
-α²F(ω), λ, ω_log, ω₂. https://github.com/henniggroup/BETE-NET
+**BETE-NET** (806 materials, 85 MB) — DFT electron–phonon calculations with full
+α²F(ω). <https://github.com/henniggroup/BETE-NET>
 
 **UCI Superconductivity** (21,263 compounds, 81 composition features,
-experimental Tc) — used only for the step-2 baseline. Contains 5,721 duplicate
-formulas, so `baseline_uci.py` reports both a naive random split and a
+experimental Tc) — used only for the composition baseline. Contains 5,721
+duplicate formulas, so `baseline_uci.py` reports both a naive random split and a
 formula-grouped split to make the leakage inflation visible.
 
 **JARVIS-DFT `supercon_3d`** — optional, `python src/fetch_data.py --jarvis`.
@@ -125,9 +222,23 @@ Tc column as a training label** (see above).
 
 ---
 
-## Conventions
+## Relation to existing work
 
-- Energies in **meV**, temperatures in **kelvin**
-- μ* = 0.10 primary, 0.13 sensitivity column
-- Eliashberg cutoff at 10 × ω_max
-- Tc < 0.05 K is treated as non-superconducting (`TC_FLOOR_K`)
+Two components of this question are already addressed in the literature and are
+not claimed here.
+
+The **cutoff convention for μ\*** — that μ\* has no meaning without the energy
+scale at which it is defined, and that Eliashberg-vs-Allen–Dynes comparisons are
+invalid unless it is matched — is derived and applied by Kogler *et al.*
+(IsoME, 2025). The same convention is reached independently here and used as a
+check on the solver, not as a contribution.
+
+**Improving the closed form by regression on its own moments** is the subject of
+Xie *et al.* (2021), who applied symbolic regression to (λ, μ\*, ω₂/ω_log) and
+reported 15.1% RMSE. That is substantially the learnable component.
+
+The **extremal** problem on the moment-matched set has a long history —
+Bergmann and Rainer's functional derivative δTc/δα²F at fixed area, Leavens's
+least upper bound, and the result that an Einstein spectrum maximises Tc at
+fixed λ and ⟨ω²⟩, which is the r → 1 endpoint above. What appears not to have
+been done is measuring the *distribution* on that set rather than its extremes.
