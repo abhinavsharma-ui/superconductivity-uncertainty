@@ -182,6 +182,17 @@ def _process_one(item: tuple) -> dict | None:
     tc_mcm = mcmillan_tc(lam, w_log, MU_STAR_AD)
 
     # solver: our cutoff, hence the calibrated equivalent of the SAME repulsion
+    #
+    # The short-circuit below is a COST BOUND SELECTING ON THE ARM UNDER TEST,
+    # and it is the reason `ad_error` is defined for 583 of 806 rather than all
+    # of them: the 223 skipped rows are exactly those with Tc_AD < 0.005 K, and
+    # they are the low-lambda end (median lambda 0.160 against 0.419 for the
+    # rest). An independent run that solved 103 of them found 98 return
+    # Tc_ME = 0 anyway and none reach SC_THRESHOLD_K, so `is_sc` and every
+    # number quoted on it are unaffected -- but the "all defined" population is
+    # AD-selected and must not be used as a comparand. Step F axis 2 declares
+    # Tc_ME > SC_THRESHOLD_K on both sides, which avoids it by construction.
+    # Removing the bound costs 1.3-2.2 h single core for the 223.
     tc_me = (0.0 if tc_ad < SOLVER_FLOOR_K else
              eliashberg_tc(w, a, mu_star=MU_STAR_ME, cutoff_factor=CUTOFF_FACTOR,
                            t_guess=tc_ad, t_floor=SOLVER_FLOOR_K,
