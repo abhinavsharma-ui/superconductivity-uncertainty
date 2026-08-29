@@ -136,6 +136,15 @@ SC_THRESHOLD_K = 0.05
 # over the 806 is 22,380 (BeGeSc). Capping biases Tc low and correlates with
 # lambda, so a nonzero capped count invalidates the analysis.
 MAX_MATSUBARA = 250_000
+# SOLVER_TOL is passed EXPLICITLY. eliashberg_tc's signature default is 2e-3,
+# and this file used to inherit it silently -- which quantised Tc_ME to ~2.4e-4
+# relative, left 435 of 583 rows sharing 107 repeated ad_error values, and made
+# the OLS/L1 disagreement in the pair regression an artifact rather than a
+# choice of estimator (see src/resolution_check.py). floor_at already passed
+# 1e-4, so the two sides of any floor-vs-baseline comparison sat twenty-fold
+# apart in solver tolerance. Same class as the max_matsubara=1500 default.
+# Measured cost of the tightening: 1.0-1.15x per material at every Tc_AD band.
+SOLVER_TOL = 1e-4
 
 
 def _process_one(item: tuple) -> dict | None:
@@ -176,14 +185,14 @@ def _process_one(item: tuple) -> dict | None:
     tc_me = (0.0 if tc_ad < SOLVER_FLOOR_K else
              eliashberg_tc(w, a, mu_star=MU_STAR_ME, cutoff_factor=CUTOFF_FACTOR,
                            t_guess=tc_ad, t_floor=SOLVER_FLOOR_K,
-                           max_matsubara=MAX_MATSUBARA))
+                           max_matsubara=MAX_MATSUBARA, tol=SOLVER_TOL))
 
     tc_ad_alt = allen_dynes_tc(lam, w_log, w_2, MU_STAR_AD_ALT)
     tc_me_alt = (0.0 if tc_ad_alt < SOLVER_FLOOR_K else
                  eliashberg_tc(w, a, mu_star=MU_STAR_ME_ALT,
                                cutoff_factor=CUTOFF_FACTOR, t_guess=tc_ad_alt,
                                t_floor=SOLVER_FLOOR_K,
-                               max_matsubara=MAX_MATSUBARA))
+                               max_matsubara=MAX_MATSUBARA, tol=SOLVER_TOL))
 
     row.update({
         "Tc_ME": tc_me, "Tc_AD": tc_ad, "Tc_AD_nc": tc_ad_nc, "Tc_McM": tc_mcm,
