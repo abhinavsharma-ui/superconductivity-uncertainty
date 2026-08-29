@@ -22,7 +22,7 @@ TWO things this gets right that are easy to get wrong
    form's. The solver is roughly half as mu*-sensitive as Allen-Dynes (|S_AD| /
    |S_ME| ~ 1.9 across this dataset), so normalising by the AD derivative
    overstates the correction by ~2x. This is the same trap already logged in
-   the handoff: converting a mu* shift to a Tc shift with AD's sensitivity
+   converting a mu* shift to a Tc shift with AD's sensitivity
    overstates it by 30-50%.
 
 2. No new solver runs are needed. build_physics_dataset.py already computes
@@ -166,7 +166,7 @@ def main(threshold: float = SC_THRESHOLD_K, path: str = DATA) -> pd.DataFrame:
           f"\n  median Tc_ME/Tc_AD = {np.exp(ne.ad_error).median():.4f}"
           f"   implied constant dmu* = {ne.dmu_local.median():+.5f}")
 
-    print("\nreporting-threshold sensitivity (the check the handoff requires):")
+    print("\nreporting-threshold sensitivity (the check that decides it):")
     print(f"  {'Tc_ME >':>9}{'n':>6}{'corr(lam,|ad_err|)':>21}"
           f"{'corr(r,|ad_err|)':>19}{'corr(lam,|dmu_eq|)':>21}"
           f"{'corr(r,|dmu_eq|)':>19}")

@@ -11,7 +11,7 @@ Output: data/processed/physics_dataset.csv with, per material,
           - Tc_ME    : linearized Migdal-Eliashberg Tc  (the reference)
           - Tc_AD    : Allen-Dynes Tc with f1,f2 corrections
           - Tc_AD_nc : Allen-Dynes without corrections
-          - Tc_McM   : the McMillan form in the project handoff
+          - Tc_McM   : the McMillan form, the pre-Allen-Dynes closed form
           - ad_error : log(Tc_ME / Tc_AD) -- the breakdown magnitude
         in Allen-Dynes's mu* convention (0.10 primary, 0.13 sensitivity). The
         solver runs at the calibrated equivalents of those, not the same

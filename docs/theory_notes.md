@@ -189,7 +189,7 @@ $$T_c = \frac{f_1f_2\,\omega_{\log}}{1.2}\exp\left[\frac{-1.04(1+\lambda)}{\lamb
 - **f₁** — strong-coupling correction, depends on λ
 - **f₂** — spectral-shape correction, depends on ω₂/ω_log
 
-So the formula in the handoff is **an interpolation fit, not a theory.** The
+So the Allen-Dynes formula is **an interpolation fit, not a theory.** The
 Eliashberg equations are the theory. That is precisely why "Allen-Dynes
 breakdown" is a meaningful and *measurable* thing: it's a fit failing outside
 the region it was fitted in.
@@ -245,7 +245,7 @@ can measure what was discarded, directly from α²F.
 
 ## 7. Reading queue, reordered
 
-Given where Track A now is, the Track B order in the handoff isn't optimal.
+Given where Track A now is, the original Track B order isn't optimal.
 Suggested:
 
 1. **Energy Gap (Kittel p.266)** — you need Δ before the gap equation means

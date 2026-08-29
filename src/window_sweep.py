@@ -14,7 +14,7 @@ For each window the driver draws a FRESH `rng.permutation(pool)[:n_donors]`, so:
     one, it is a different random subset of a different pool
   - the reported n is SUCCESSFUL TILTS out of a fixed budget, not pool size,
     so windows with more failures are more heavily selected, and selection is
-    not neutral (see section 4 of HANDOFF_v3: it favours wide-support donors)
+    not neutral: it favours wide-support donors, one-sided in sign
 
 So window effect, resampling variance and tilt-selection are confounded in the
 aggregate spread. Two of the four cells came out non-monotone in the window

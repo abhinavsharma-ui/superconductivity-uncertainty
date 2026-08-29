@@ -54,7 +54,7 @@ print(f"\n  ln sigma = {beta[0]:+.3f} {beta[1]:+.3f}*lambda {beta[2]:+.3f}*r"
       f"   R2={ss:.2f}  ({len(B)} bins)")
 print(f"  d ln sigma / d lambda = {beta[1]:+.2f}  -> over the ladder's dlam=1.64: "
       f"{np.exp(beta[1]*1.64):.3f}x  ({1/np.exp(beta[1]*1.64):.1f}-fold drop)")
-print(f"  CW's recorded falsifier from the CrRh3/HfRu2Ta pair: -2.4 -> 50-fold")
+print(f"  falsifier recorded from the CrRh3/HfRu2Ta pair: -2.4 -> 50-fold")
 
 print("\n=== does the fitted form respect the r=1 boundary? ===")
 y = np.log(B.sig)

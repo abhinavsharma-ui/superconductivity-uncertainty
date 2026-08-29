@@ -26,7 +26,7 @@ non-convex function over a set that is unbounded in the support direction, so
 it has no fixed point and is a function of how far the optimiser is allowed to
 roam. Treat range_lnTc as a diagnostic only.
 
-This also retracts HANDOFF section 6's justification for the experiment: the
+This also retracts the original justification for the experiment: the
 floor is NOT "computed with zero reference to the training data". It is defined
 only relative to a distribution over spectra.
 

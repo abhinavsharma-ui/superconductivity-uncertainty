@@ -18,7 +18,7 @@ o = pd.DataFrame(rows); o["drop"] = o.k_full - o.k_com
 print(o[["target","r","lam","n","width_sd","width_iqr","k_full","k_com","drop"]]
       .to_string(index=False, float_format=lambda v: f"{v:8.3f}"))
 
-print("\n--- CW's mixture prediction, tested every coherent way (spearman, n=9) ---")
+print("\n--- pool-heterogeneity hypothesis, every coherent form (spearman, n=9) ---")
 for lab, a, b in [("k_full   vs natural-set width", o.k_full, o.width_sd),
                   ("k_full   vs cell's own r",      o.k_full, o.r),
                   ("k_drop   vs natural-set width", o["drop"], o.width_sd),
