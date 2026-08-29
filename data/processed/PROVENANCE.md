@@ -1,12 +1,32 @@
 # physics_dataset.csv provenance
 
-The committed `physics_dataset.csv` was built BEFORE `SOLVER_TOL` was made
-explicit, so its `Tc_ME` and `Tc_ME_mu13` carry `eliashberg_tc`'s signature
-default of `tol = 2e-3`, not the `1e-4` the code now passes.
+**Rebuilt at `SOLVER_TOL = 1e-4` on 2026-08-30**, 806 materials, 33 min at 3
+workers. The previous file carried `eliashberg_tc`'s signature default of
+`tol = 2e-3` and is recoverable at `git show 64b75c9:data/processed/physics_dataset.csv`.
 
-Consequence, measured in `src/resolution_check.py`: `Tc_ME/Tc_AD` takes 255
-distinct values over 583 materials; 435 rows share 107 repeated `ad_error`
-values; 94.4% of the `is_sc & Tc_AD > 1.0` population sits on a repeated value.
+What the rebuild changed, old -> new:
+
+    distinct Tc_ME/Tc_AD ratios          255 -> 539   (of 583 defined)
+    repeated ad_error values             107 -> 40
+    rows sitting on a repeat             435 -> 85
+    floor population on a repeat        94.4% -> 19.4%
+    median |relative Tc shift|                 3.03e-04
+    rows moving more than the old grid step   320 of 583
+
+What it did not change. Every headline number is stable to the third decimal:
+
+    population    med|e| old -> new    RMS old -> new     mean old -> new
+    is_sc         0.0355 -> 0.0356     0.0993 -> 0.0993   +0.0341 -> +0.0341
+    Tc_AD > 1     0.0205 -> 0.0204     0.0379 -> 0.0379   -0.0142 -> -0.0142
+
+    functional lever RMS/median         2.79x -> 2.79x
+    is_sc count                           520 -> 520
+    floor population count                304 -> 304
+
+So the quantisation was real, it moved 320 of 583 rows by more than the old grid
+step, and it never touched a conclusion. What it did corrupt was the left tail
+of `ln|delta ad_error|` in the pair regressions, where exact ties made the
+choice of estimator look like a modelling decision -- see `src/resolution_check.py`.
 
 What this does and does not affect:
 
