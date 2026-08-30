@@ -58,9 +58,19 @@ def main():
     print(f"\n  sigma(0.742) / sigma(0.447) = {sig(m_cells)/sig(m_dec):.3f}"
           f"   -> the declared population's floor is that much larger")
 
-    f_med = sig(m_cur) / sig(m_dec)
-    f_pm = np.median(sig(cur['lambda'].clip(lower=lo_end))) / \
-           np.median(sig(dec['lambda'].clip(lower=lo_end)))
+    # The denominator of headroom is the NINE CELLS, not the population they
+    # were drawn from. Those differ: the cells are tertile-median members, so
+    # their median lambda is 0.742 against the parent population's 0.612, and
+    # substituting the parent inflates the correction by
+    # sigma(0.612)/sigma(0.742) = 1.43x. An earlier version of this file made
+    # exactly that substitution, and shipped 0.590 in the same message as the
+    # 0.415 that contradicted it.
+    f_med = sig(m_cells) / sig(m_dec)
+    f_pm = np.median(sig(g9.lam)) / np.median(sig(dec['lambda'].clip(lower=lo_end)))
+    # definitional invariant: the median-lambda correction IS sigma at the
+    # cells' median lambda over sigma at the declared population's. If these
+    # ever disagree, the numerator has been substituted again.
+    assert abs(m_cells - g9.lam.median()) < 1e-12, "numerator must be the cells"
     print(f"\n  coverage correction to headroom")
     print(f"    median-lambda form      {f_med:.3f}x")
     print(f"    per-material form       {f_pm:.3f}x   (the more principled)")
