@@ -133,8 +133,9 @@ python src/build_physics_dataset.py --workers 4
 python src/reach_map.py
 python src/run_floor.py
 
-# the lambda ladder: seven targets at matched r, lambda spanning 4.4x
+# the lambda ladder at matched r, then the descending limb below it
 python src/run_ladder.py --workers 4
+python src/run_lowlam.py --workers 4
 ```
 
 Long runs are checkpointed and resumable, and drop to below-normal process
