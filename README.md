@@ -56,37 +56,52 @@ so at r = 1 the moment-matched set is a single point and the floor is exactly
 zero. The observed trend is the interior of a curve whose endpoint is fixed by
 an inequality.
 
+**The floor is non-monotone in the coupling constant**, measured at fixed r
+rather than partialled out: twelve synthetic rungs at r = 1.19 exactly, λ = 0.40
+to 20 (`src/run_ladder.py`, `src/run_lowlam.py`). A minimum near λ = 0.90 and a
+maximum near 5. The strong-coupling end is zero by asymptotics — the λ → ∞ limit
+depends only on matched moments — and the weak-coupling rise is measured.
+
+**Headroom is quoted, and reads better as a function of shape than as a
+scalar.** It falls from 26.7 at r = 1.06 to 2.9 at r = 1.56 (ρ = −0.833), and
+diverges as r → 1, where the moment-matched set collapses to a point and the
+entire Allen–Dynes error becomes learnable in principle. The scalar is **11.0**
+under the declared population, convention and recalibration class, **5–11** once
+the cells' coupling coverage is corrected for, and 3.3–20.6 across the
+alternatives tabulated in §6.3. Each lever is measured rather than asserted:
+functional 2.80×, population 2.65× on the numerator, μ\* convention 1.59–3.26×
+(it flips the sign of the mean error), recalibration class 1.82×. The order of
+magnitude is robust; the leading digit is not.
+
 ### What is not
 
 **The λ dependence cannot be resolved on the nine-cell grid.** λ and r are
 collinear in any grid drawn from real materials, and the partial correlation
-fails leave-one-out on a single cell. It *is* resolved by holding r fixed by
-construction instead: twelve synthetic rungs at r = 1.19 exactly, λ = 0.40 to 20
-(`src/run_ladder.py`, `src/run_lowlam.py`). The floor turns out to be
-**non-monotone in λ** — a minimum near 0.90 and a maximum near 5 — so the
-cross-cell coefficient was not merely imprecise but wrong in sign. The strong-
-coupling end is zero by asymptotics; the weak-coupling rise is measured, not
-derived, and has no mechanism yet.
+fails leave-one-out on a single cell — so the cross-cell coefficient is not
+merely imprecise but wrong in sign, as the fixed-r ladder above shows. No
+quantity of additional donors fixes that; it is a limitation of the grid's
+design rather than its sampling.
 
-**The headroom ratio is quoted, with four declarations and a sensitivity
-table.** Under the declared population, convention and recalibration class it is
-**11.0**, moving to **5–11** once the cells' coupling coverage is corrected for,
-and running 3.3–20.6 across the alternatives tabulated in §6.3. Each choice is
-measured rather than asserted: the functional 2.80× between median and RMS, the
-population 2.65× on the numerator, the μ\* convention 1.59–3.26× (it flips the
-sign of the mean error), and the recalibration class 1.82×. The order of
-magnitude is robust; the leading digit is not.
+**The weak-coupling rise has no mechanism.** The strong-coupling zero is
+derived. The rise below λ ≈ 0.9 is measured, and the exponential-denominator
+argument predicts its sign but not its slope.
 
-**Headroom is better read as a function of shape than as a scalar.** It falls
-from 26.7 at r = 1.06 to 2.9 at r = 1.56 (ρ = −0.833), and diverges as r → 1,
-where the moment-matched set collapses to a point and the entire Allen–Dynes
-error becomes learnable in principle.
+**The heavy tail is unexplained.** ln Tc over moment-matched spectra is
+leptokurtic at every cell, κ from 2.7 to 26.5, and κ falls as r rises. A
+composition-based account is ruled out — two cells sharing 98% of their donors
+differ by 2.5× in κ — and nothing replaces it.
 
 **Every floor number is conditional on a choice of ensemble.** The
 moment-matched set is a convex polytope; a *measure* on that polytope is a
 declaration, not a fact. The cross-cell dynamic range is 23.1× under each
 target's own donor set and 14.1× under a fixed common set. That gap is a
 finding, not a defect awaiting a fix — see `src/common_matched.py`.
+
+**The reference is DFT, not experiment.** The solver returns 17.1 K for Nb
+against 9.1–9.5 K measured, because the input α²F gives λ = 1.23 where an
+independent pipeline gives 0.94. This work compares a closed form with the
+theory it approximates on identical input; agreement with experiment is not
+claimed.
 
 ---
 
